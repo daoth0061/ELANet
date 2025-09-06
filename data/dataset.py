@@ -135,7 +135,6 @@ class FaceDataset(Dataset):
         try:
             freq_img = extract_all_frequency_features(img_url, self.config)
             freq_img = self.transform(freq_img)
-            freq_img = torch.from_numpy(freq_img.transpose(2, 0, 1))  # Convert to (C, H, W)
         except Exception as e:
             print(f"Error extracting frequency features from {img_url}: {e}")
             # Create fallback frequency features
@@ -167,8 +166,6 @@ def create_transforms(config):
     # Standard transform for fake images and testing
     transform = transforms.Compose([
         transforms.ToTensor(),  
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
         transforms.Resize(image_size)
     ])
 

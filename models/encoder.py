@@ -97,6 +97,7 @@ class EncodeELA(nn.Module):
                 mode=self.interpolation_mode, 
                 align_corners=self.align_corners
             )
+            print(f"🔄 Resized HAFT features to {freq_img.shape[-2:]} for concatenation")
         
         # Concatenate 8 frequency features with HAFT output: (B, 9, H, W)
         x = torch.cat([freq_img, haft_features], dim=1)
