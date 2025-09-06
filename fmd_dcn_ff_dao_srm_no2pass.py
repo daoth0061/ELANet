@@ -749,71 +749,6 @@ def to_3d(x):
 def to_4d(x,h,w):
     return rearrange(x, 'b (h w) c -> b c h w',h=h,w=w)
 
-class FeedForward(nn.Module):
-    def __init__(self, dim, ffn_expansion_factor, bias):
-        super(FeedForward, self).__init__()
-
-        hidden_features = int(dim*ffn_expansion_factor)
-
-        self.project_in = nn.Conv2d(dim, hidden_features*2, kernel_size=1, bias=bias)
-        self.dwconv = nn.Conv2d(hidden_features*2, hidden_features*2, kernel_size=3, stride=1, padding=1, groups=hidden_features*2, bias=bias)
-        self.project_out = nn.Conv2d(hidden_features, dim, kernel_size=1, bias=bias)
-        
-        # Ultra-speed optimization: Fuse activations
-        self.activation = nn.GELU()
-
-    def forward(self, x):
-        # Fused projection and activation
-        x = self.project_in(x)
-        x1, x2 = self.dwconv(x).chunk(2, dim=1)
-        x = self.activation(x1) * x2
-        x = self.project_out(x)
-        return x
-
-
-class Attention(nn.Module):
-    def __init__(self, dim, num_heads, bias):
-        super(Attention, self).__init__()
-        self.num_heads = num_heads
-        self.temperature = nn.Parameter(torch.ones(num_heads, 1, 1))
-        self.scale = (dim // num_heads) ** -0.5  # Pre-compute scale factor
-
-        self.qkv = nn.Conv2d(dim, dim*3, kernel_size=1, bias=bias)
-        self.qkv_dwconv = nn.Conv2d(dim*3, dim*3, kernel_size=3, stride=1, padding=1, groups=dim*3, bias=bias)
-        self.project_out = nn.Conv2d(dim, dim, kernel_size=1, bias=bias)
-        
-        # Ultra-speed optimization: Pre-allocate buffers
-        self.register_buffer('attention_cache', None)
-
-    def forward(self, x):
-        b, c, h, w = x.shape
-
-        # Fused QKV computation
-        qkv = self.qkv_dwconv(self.qkv(x))
-        q, k, v = qkv.chunk(3, dim=1)   
-        
-        # Optimized reshape using view instead of rearrange
-        head_dim = c // self.num_heads
-        q = q.view(b, self.num_heads, head_dim, h * w)
-        k = k.view(b, self.num_heads, head_dim, h * w)
-        v = v.view(b, self.num_heads, head_dim, h * w)
-
-        # Fast normalization
-        q = F.normalize(q, dim=-2, p=2)
-        k = F.normalize(k, dim=-2, p=2)
-
-        # Optimized attention computation with temperature scaling
-        attn = torch.matmul(q.transpose(-2, -1), k) * (self.temperature * self.scale)
-        attn = F.softmax(attn, dim=-1)
-
-        # Efficient matrix multiplication
-        out = torch.matmul(attn, v.transpose(-2, -1)).transpose(-2, -1)
-        
-        # Fast reshape back
-        out = out.contiguous().view(b, c, h, w)
-        out = self.project_out(out)
-        return out
-
 
 class WithBias_LayerNorm(nn.Module):
     def __init__(self, normalized_shape):
@@ -864,20 +799,6 @@ class LayerNorm(nn.Module):
         return to_4d(self.body(to_3d(x)), h, w)
 
 
-class TransformerBlock(nn.Module):
-    def __init__(self, dim, num_heads, ffn_expansion_factor, bias, LayerNorm_type):
-        super(TransformerBlock, self).__init__()
-
-        self.norm1 = LayerNorm(dim, LayerNorm_type)
-        self.attn = Attention(dim, num_heads, bias)
-        self.norm2 = LayerNorm(dim, LayerNorm_type)
-        self.ffn = FeedForward(dim, ffn_expansion_factor, bias)
-
-    def forward(self, x):
-        x = x + self.attn(self.norm1(x))
-        x = x + self.ffn(self.norm2(x))
-
-        return x
 
 class REBNCONV(nn.Module):
     def __init__(self, in_ch=3, out_ch=3, dirate=1):
@@ -1529,57 +1450,6 @@ class AttentionGateV2(nn.Module):
         ela = self.conv2(ela)
         attn_gate = self.conv_block(x1 + ela)
         return x * attn_gate
-
-
-class CMF_Block(nn.Module):
-    def __init__(self, in_channel, hidden_channel, out_channel):
-        super(CMF_Block, self).__init__()
-
-        self.conv1 = nn.Conv2d(
-            in_channel, hidden_channel, kernel_size=1, stride=1, padding=0
-        )
-        self.conv2 = nn.Conv2d(
-            in_channel, hidden_channel, kernel_size=1, stride=1, padding=0
-        )
-        self.conv3 = nn.Conv2d(
-            in_channel, hidden_channel, kernel_size=1, stride=1, padding=0
-        )
-
-        self.scale = hidden_channel ** -0.5
-
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(
-                hidden_channel, out_channel, kernel_size=1, stride=1, padding=0
-            ),
-            nn.BatchNorm2d(out_channel),
-            nn.LeakyReLU(0.2, inplace=True),
-        )
-
-    def forward(self, rgb, freq):
-        _, _, h, w = rgb.size()
-
-        q = self.conv1(rgb)
-        k = self.conv2(freq)
-        v = self.conv3(freq)
-
-        q = q.view(q.size(0), q.size(1), q.size(2) * q.size(3)).transpose(
-            -2, -1
-        )
-        k = k.view(k.size(0), k.size(1), k.size(2) * k.size(3))
-
-        attn = torch.matmul(q, k) * self.scale
-        m = attn.softmax(dim=-1)
-
-        v = v.view(v.size(0), v.size(1), v.size(2) * v.size(3)).transpose(
-            -2, -1
-        )
-        z = torch.matmul(m, v)
-        z = z.view(z.size(0), h, w, -1)
-        z = z.permute(0, 3, 1, 2).contiguous()
-
-        output = rgb + self.conv4(z)
-
-        return output
 
 
 class Classifier(nn.Module):

@@ -90,16 +90,6 @@ Various attention mechanisms used throughout the model:
   - **Implementation:** `models/attention.py`
   - **Purpose:** Guided attention for feature fusion
 
-- **TransformerBlock**: Self-attention mechanism
-  - **Implementation:** `models/attention.py`
-  - **Components:**
-    - `FeedForward`: MLP with GELU activation
-    - `LayerNorm`: Normalization layers (with/without bias)
-
-- **CMF_Block (Cross-Modal Fusion)**: Fusion between different feature streams
-  - **Implementation:** `models/attention.py`
-  - **Purpose:** Merge information from multiple modalities
-
 ### Building Blocks
 
 Basic building blocks for the model architecture:
@@ -168,7 +158,6 @@ Components for binary classification of real/fake faces:
 
 3. **Feature Fusion**:
    - AttentionGateV2 fuses RGB and frequency features
-   - CMF_Block merges different feature streams
 
 4. **Decoder Processing**:
    - U2NET decoder generates segmentation mask
