@@ -1,0 +1,130 @@
+# ELANet: Fake Face Manipulation Detection Configuration
+
+# Dataset Configuration
+dataset:
+  base_url: "datasets/FaceForensic_ImageData/FF+"
+  deepfake_type: "deepfakes"  # Options: deepfakes, face2face, faceshifter, faceswap, neuraltexture
+  train_test_split: 0.8
+  random_seed: 42
+
+# Data Processing Configuration
+data_processing:
+  image_size: [256, 256]
+  frequency_size: [160, 160]
+  
+  # Frequency feature parameters
+  swt:
+    wavelet: "haar"
+    level: 2
+  
+  dct:
+    keep_ratio: 0.2
+  
+  laplacian:
+    kernel_size: 3
+  
+  srm:
+    num_filters: 3  # Use last 3 SRM filters
+
+# Model Architecture Configuration
+model:
+  # HAFT (Hierarchical Adaptive Frequency Transform) parameters
+  haft:
+    num_levels: 3
+    num_radial_bins: 16
+    context_vector_dim: 64
+  
+  # U2NET encoder parameters
+  encoder:
+    base_channels: 64
+    use_se: true
+  
+  # Attention mechanisms
+  attention:
+    cbam:
+      reduction_ratio: 16
+      kernel_size: 7
+  
+  # Classification head
+  classifier:
+    num_classes: 2
+    hidden_dims: [256, 64]
+    dropout: 0.5
+
+# Training Configuration
+training:
+  # Basic training parameters
+  epochs: 50
+  batch_size: 1
+  learning_rate: 0.001
+  weight_decay: 0.01
+  
+  # Loss weights
+  loss_weights:
+    segmentation: 0.7
+    classification: 0.3
+  
+  # Optimizer settings
+  optimizer:
+    type: "AdamW"
+    betas: [0.9, 0.999]
+    eps: 0.00000001
+    foreach: true
+  
+  # Scheduler settings
+  scheduler:
+    type: "OneCycleLR"
+    max_lr: 0.001
+    pct_start: 0.1
+    anneal_strategy: "cos"
+  
+  # DataLoader settings
+  dataloader:
+    num_workers: 2
+    pin_memory: true
+    persistent_workers: true
+    prefetch_factor: 4
+    shuffle_train: true
+    drop_last: true
+
+# Performance Optimization
+optimization:
+  # Mixed precision training
+  use_amp: true
+  
+  # Model compilation (PyTorch 2.0+)
+  compile_model: true
+  compile_mode: "max-autotune"
+  min_cuda_capability: 7.0  # Minimum CUDA capability for compilation
+  
+  # Memory optimization
+  channels_last: true
+  cudnn_benchmark: true
+  allow_tf32: true
+
+# Checkpoint and Logging Configuration
+checkpoints:
+  save_dir: "dao_ckpt_srm_no2pass"
+  save_best_metrics: true
+  metrics_to_track:
+    - loss
+    - psnr
+    - ssim
+    - auc
+    - f1
+    - precision
+    - recall
+    - specificity
+    - accuracy
+    - eer
+
+# Device Configuration
+device:
+  use_cuda: true
+  device_id: 0  # GPU device ID, use 0 for first GPU
+
+# Logging Configuration
+logging:
+  log_interval: 1  # Log every N epochs
+  save_visualizations: false
+  verbose: true

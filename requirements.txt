@@ -1,0 +1,33 @@
+# Required packages for ELANet
+
+# Core PyTorch packages
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Metrics and evaluation
+torchmetrics>=0.11.0
+scikit-learn>=1.0.0
+
+# Image processing
+opencv-python>=4.5.0
+Pillow>=8.0.0
+PyWavelets>=1.1.0
+
+# Visualization
+matplotlib>=3.3.0
+seaborn>=0.11.0
+
+# Utilities
+tqdm>=4.60.0
+einops>=0.4.0
+PyYAML>=5.4.0
+numpy>=1.21.0
+
+# Optional: For mixed precision and optimization
+# NVIDIA Apex (for advanced mixed precision, optional)
+# pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./apex
+
+# Development tools (optional)
+# jupyter>=1.0.0
+# tensorboard>=2.7.0
