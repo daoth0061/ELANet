@@ -87,33 +87,12 @@ class CBAM(nn.Module):
         return out
 
 
-class SEBlock(nn.Module):
-    """Squeeze-and-Excitation Block"""
-    
-    def __init__(self, channels, reduction=16):
-        super(SEBlock, self).__init__()
-        self.fc1 = nn.Linear(channels, channels // reduction, bias=False)
-        self.fc2 = nn.Linear(channels // reduction, channels, bias=False)
-
-    def forward(self, x):
-        b, c, h, w = x.size()
-        # Squeeze
-        y = F.adaptive_avg_pool2d(x, 1).view(b, c)
-        # Excitation
-        y = F.relu(self.fc1(y))
-        y = torch.sigmoid(self.fc2(y))
-        # Scale
-        y = y.view(b, c, 1, 1)
-        return x * y.expand_as(x)
-
-
 class AttentionGateV2(nn.Module):
     """Attention Gate for feature fusion between RGB and frequency features"""
     
     def __init__(self, channel=3):
         super(AttentionGateV2, self).__init__()
         self.conv1 = nn.Conv2d(channel, channel, kernel_size=1, stride=1)
-        self.conv2 = nn.ConvTranspose2d(channel, channel, kernel_size=2, stride=2)
         self.conv_block = nn.Sequential(
             nn.ReLU(),
             nn.Conv2d(channel, channel, kernel_size=3, stride=1, padding=1),
@@ -122,7 +101,7 @@ class AttentionGateV2(nn.Module):
     
     def forward(self, x, ela):
         x1 = self.conv1(x)
-        ela = self.conv2(ela)
+        ela = self.conv1(ela)
         attn_gate = self.conv_block(x1 + ela)
         return x * attn_gate
 

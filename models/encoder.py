@@ -122,4 +122,4 @@ class EncodeELA(nn.Module):
         cbam5 = self.cbam5(conv5)
         pool5 = self.pool5(cbam5)
         
-        return pool1, pool2, pool3, pool4, pool5
+        return cbam1, cbam2, cbam3, cbam4, cbam5
