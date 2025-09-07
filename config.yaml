@@ -3,14 +3,16 @@
 # Dataset Configuration
 dataset:
   base_url: "datasets/FaceForensic_ImageData/FF+"
-  deepfake_type: "deepfakes"  # Options: deepfakes, face2face, faceshifter, faceswap, neuraltexture
+  deepfake_types: ["deepfakes", "face2face", "faceswap"]  # List of deepfake types to use
   train_test_split: 0.8
   random_seed: 42
+  augment_real_factor: null  # Will be set to len(deepfake_types) automatically
 
 # Data Processing Configuration
 data_processing:
   image_size: [256, 256]
-  frequency_size: [160, 160]
+  frequency_size: [256, 256]
+  grayscale_image_size: [160, 160]
   
   # Frequency feature parameters
   swt:
@@ -55,7 +57,7 @@ model:
 training:
   # Basic training parameters
   epochs: 50
-  batch_size: 1
+  batch_size: 32
   learning_rate: 0.001
   weight_decay: 0.01
   

@@ -123,7 +123,7 @@ def create_dataloaders(config):
     
     # DataLoader configuration
     dataloader_config = config.get('training.dataloader', {})
-    batch_size = config.get('training.batch_size', 32)
+    batch_size = config.get('training.batch_size', 16)
     num_workers = dataloader_config.get('num_workers', 2)
     pin_memory = dataloader_config.get('pin_memory', True)
     persistent_workers = dataloader_config.get('persistent_workers', True)
@@ -171,9 +171,9 @@ def main():
     torch.cuda.manual_seed(random_seed)
     
     print(f"🎯 Starting ELANet training with configuration:")
-    print(f"   Dataset: {config.get('dataset.deepfake_type', 'deepfakes')}")
+    print(f"   Dataset: {config.get('dataset.deepfake_types', ['deepfakes'])}")
     print(f"   Epochs: {config.get('training.epochs', 50)}")
-    print(f"   Batch size: {config.get('training.batch_size', 32)}")
+    print(f"   Batch size: {config.get('training.batch_size', 16)}")
     print(f"   Learning rate: {config.get('training.learning_rate', 0.001)}")
     
     # Create data loaders
