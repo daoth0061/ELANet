@@ -82,10 +82,6 @@ Various attention mechanisms used throughout the model:
     - `ChannelAttention`: Focuses on important channels
     - `SpatialAttention`: Highlights important spatial regions
 
-- **SEBlock (Squeeze-and-Excitation)**: Channel-wise attention
-  - **Implementation:** `models/attention.py`
-  - **Purpose:** Recalibrate channel-wise feature responses
-
 - **AttentionGateV2**: Feature fusion between RGB and frequency domains
   - **Implementation:** `models/attention.py`
   - **Purpose:** Guided attention for feature fusion

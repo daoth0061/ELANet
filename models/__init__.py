@@ -6,7 +6,7 @@ from .u2net import U2NET, create_model
 from .encoder import EncodeELA
 from .haft import HAFT
 from .attention import (
-    CBAM, SEBlock, AttentionGateV2
+    CBAM, AttentionGateV2
 )
 from .blocks import (
     ConvBlock, DeformableConv2d, Classifier,
@@ -19,7 +19,6 @@ __all__ = [
     'EncodeELA',
     'HAFT',
     'CBAM',
-    'SEBlock',
     'AttentionGateV2',
     'ConvBlock',
     'DeformableConv2d',
