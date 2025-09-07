@@ -423,55 +423,98 @@ random.seed(42)
 
 
 # Stationary Wavelet Transform
-def stationary_wavelet_transform(image_path, wavelet='haar', level=2, resize_to=None):
+def stationary_wavelet_transform(image, wavelet='haar', level=2, resize_to=None):
+    """
+    Apply Stationary Wavelet Transform for frequency analysis.
+    
+    Args:
+        image: Grayscale numpy array (expects grayscale input directly)
+        wavelet: Wavelet type (default: 'haar')
+        level: Decomposition level (default: 2)
+        resize_to: Optional tuple (width, height) to resize output
+        
+    Returns:
+        SWT coefficients as numpy array
+    """
     try:
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-
-        if resize_to is not None:
-            image = cv2.resize(image, resize_to, interpolation=cv2.INTER_CUBIC)
+        # Assume input is already grayscale numpy array
+        # No internal conversion needed
+        
+        # Ensure minimum size for SWT decomposition
+        divisor = 2 ** level
+        current_h, current_w = image.shape
+        pad_h = current_h % divisor
+        pad_w = current_w % divisor
+        
+        if pad_h > 0 or pad_w > 0:
+            pad_h = divisor - pad_h if pad_h > 0 else 0
+            pad_w = divisor - pad_w if pad_w > 0 else 0
+            pad_top    = pad_h // 2
+            pad_bottom = pad_h - pad_top
+            pad_left   = pad_w // 2
+            pad_right  = pad_w - pad_left
+            image = np.pad(image, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='edge')
 
         coeffs = pywt.swt2(image, wavelet, level=level)
 
         FS = []
         for i in range(len(coeffs)):
             fs = coeffs[i][1][0] + coeffs[i][1][1] + coeffs[i][1][2]
-            fs = np.where((fs / np.max(fs) * 255.0) < 255.0, (fs / np.max(fs) * 255.0), 255.0)
+            # Handle potential division by zero
+            max_val = np.max(fs)
+            if max_val > 0:
+                fs = np.where((fs / max_val * 255.0) < 255.0, (fs / max_val * 255.0), 255.0)
+            else:
+                fs = np.zeros_like(fs)
             fs = np.where(fs < 0, 0, fs)
+            
             fs = np.expand_dims(fs, axis=2)
             FS.append(fs)
 
         FS = np.concatenate(FS, axis=2)
+        
+        if resize_to is not None:
+            resized_channels = []
+            for c in range(FS.shape[2]):
+                ch_resized = cv2.resize(FS[:,:,c], resize_to, interpolation=cv2.INTER_CUBIC)
+                resized_channels.append(ch_resized[..., np.newaxis])
+            FS = np.concatenate(resized_channels, axis=2)
+
+        
         return FS
 
     except Exception as e:
-        print(f"[LỖI ẢNH] {image_path} -> {e}")
+        print(f"[LỖI ẢNH] SWT processing -> {e}")
         raise
 
-def dct_high_freq_only(img_path, keep_ratio=0.2, resize_to=None):
+def dct_high_freq_only(image, keep_ratio=0.2, resize_to=None):
     """
     Giữ lại thông tin cao tần trong miền DCT.
-    :param img_path: đường dẫn ảnh đầu vào
+    :param image: Grayscale numpy array (expects grayscale input directly)
     :param keep_ratio: tỉ lệ phần cao tần giữ lại (0-1)
     :param resize_to: resize ảnh về kích thước (W,H) nếu cần
     :return: ảnh khôi phục từ cao tần
     """
-    # 1. Đọc ảnh grayscale
-    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise ValueError(f"Không đọc được ảnh từ {img_path}")
+    # Assume input is already grayscale numpy array
+    # No internal conversion needed
+    img = image
     
-    if resize_to is not None:
-        img = cv2.resize(img, resize_to, interpolation=cv2.INTER_CUBIC)
+    if img is None:
+        raise ValueError(f"Invalid image input")
 
-    img = img.astype(np.float32) / 255.0
+    if img.dtype != np.float32:
+        img = img.astype(np.float32)
+    if img.max() > 1.0:
+        img /= 255.0
+
 
     # 2. DCT
     dct_coeff = cv2.dct(img)
 
     # 3. Lọc bỏ thấp tần (đặt thành 0 vùng top-left)
     h, w = dct_coeff.shape
-    h_cut = int(h * keep_ratio)
-    w_cut = int(w * keep_ratio)
+    h_cut = max(1, int(h * keep_ratio))  # Ensure at least 1 pixel
+    w_cut = max(1, int(w * keep_ratio))  # Ensure at least 1 pixel
 
     dct_low_removed = dct_coeff.copy()
     dct_low_removed[:h_cut, :w_cut] = 0   # xoá vùng thấp tần
@@ -481,22 +524,24 @@ def dct_high_freq_only(img_path, keep_ratio=0.2, resize_to=None):
     img_high = np.clip(img_high, 0, 1)
     img_high = (img_high * 255).astype(np.uint8)
 
+    if resize_to is not None:
+        img_high = cv2.resize(img_high, resize_to, interpolation=cv2.INTER_CUBIC)
+
     return img_high
 
-def laplacian_high_freq(img_path, resize_to=None):
+def laplacian_high_freq(image, resize_to=None):
     """
     Lọc cao tần bằng Laplacian.
-    :param img_path: đường dẫn ảnh
+    :param image: Grayscale numpy array (expects grayscale input directly)
     :param resize_to: (W,H) nếu cần resize
     :return: ảnh laplacian (edges/noise) và ảnh khôi phục khi chỉ giữ cao tần
     """
-    # 1. Đọc ảnh grayscale
-    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise ValueError(f"Không đọc được ảnh từ {img_path}")
+    # Assume input is already grayscale numpy array
+    # No internal conversion needed
+    img = image
     
-    if resize_to is not None:
-        img = cv2.resize(img, resize_to, interpolation=cv2.INTER_CUBIC)
+    if img is None:
+        raise ValueError(f"Invalid image input")
 
     # 2. Áp dụng Laplacian (bộ lọc high-pass)
     lap = cv2.Laplacian(img, ddepth=cv2.CV_32F, ksize=3)
@@ -508,15 +553,19 @@ def laplacian_high_freq(img_path, resize_to=None):
     high_freq_only = cv2.addWeighted(img.astype(np.float32), 0, lap, 1, 0)
     high_freq_only = np.clip(high_freq_only, 0, 255).astype(np.uint8)
 
+    if resize_to is not None:
+        lap_norm = cv2.resize(lap_norm, resize_to, interpolation=cv2.INTER_CUBIC)
+        high_freq_only = cv2.resize(high_freq_only, resize_to, interpolation=cv2.INTER_CUBIC)
+
     return lap_norm, high_freq_only
 
 
-def apply_srm_filters(img_path, resize_to=None):
+def apply_srm_filters(image, resize_to=None):
     """
     Apply SRM (Steganalysis Rich Model) filters for artifact detection.
     
     Args:
-        img_path: Path to the image
+        image: Grayscale numpy array (expects grayscale input directly)
         resize_to: Optional tuple (width, height) to resize image
         
     Returns:
@@ -534,14 +583,12 @@ def apply_srm_filters(img_path, resize_to=None):
                   [-4, 16, -24, 16, -4], [1, -4, 6, -4, 1]], dtype=np.float32)
     ]
     
-    # Read the image
-    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise ValueError(f"Could not read image: {img_path}")
+    # Assume input is already grayscale numpy array
+    # No internal conversion needed
+    img = image
     
-    # Resize if needed
-    if resize_to is not None:
-        img = cv2.resize(img, resize_to, interpolation=cv2.INTER_CUBIC)
+    if img is None:
+        raise ValueError(f"Invalid image input")
     
     # Apply all SRM filters and keep all individual responses
     responses = []
@@ -549,20 +596,20 @@ def apply_srm_filters(img_path, resize_to=None):
         # Pad filter to 5x5 if smaller
         h, w = filt.shape
         if h < 5 or w < 5:
-            pad_h = 5 - h
-            pad_w = 5 - w
-            pad_top = pad_h // 2
-            pad_bottom = pad_h - pad_top
-            pad_left = pad_w // 2
-            pad_right = pad_w - pad_left
+            pad_h_filt = 5 - h
+            pad_w_filt = 5 - w
+            pad_top = pad_h_filt // 2
+            pad_bottom = pad_h_filt - pad_top
+            pad_left = pad_w_filt // 2
+            pad_right = pad_w_filt - pad_left
             filt = np.pad(filt, ((pad_top, pad_bottom), (pad_left, pad_right)), 'constant')
         
         # Apply filter using convolution
         response = cv2.filter2D(img, -1, filt)
         
         # Normalize each response to 0-255 range
-        if np.max(response) > 0:
-            norm_resp = cv2.normalize(response, None, 0, 255, cv2.NORM_MINMAX)
+        if np.max(np.abs(response)) > 0:
+            norm_resp = cv2.normalize(np.abs(response), None, 0, 255, cv2.NORM_MINMAX)
         else:
             norm_resp = np.zeros_like(response)
         
@@ -570,10 +617,18 @@ def apply_srm_filters(img_path, resize_to=None):
         responses.append(np.expand_dims(norm_resp.astype(np.uint8), axis=2))
     
     # Concatenate all filter responses along channel dimension
-    # This gives us 10 channels, one for each SRM filter
+    # This gives us 3 channels, one for each of the last 3 SRM filters
     srm_features = np.concatenate(responses, axis=2)
     
-    # Return all 10 SRM filter responses as separate channels
+    if resize_to is not None:
+        # For multi-channel images, we need to resize each channel separately
+        resized_channels = []
+        for ch in range(srm_features.shape[2]):
+            resized_ch = cv2.resize(srm_features[:, :, ch], resize_to, interpolation=cv2.INTER_CUBIC)
+            resized_channels.append(np.expand_dims(resized_ch, axis=2))
+        srm_features = np.concatenate(resized_channels, axis=2)
+    
+    # Return all 3 SRM filter responses as separate channels
     return srm_features
 
 
@@ -607,16 +662,24 @@ def get_haft_model():
 # Read FF+ dataset
 BASE_URL = 'datasets/FaceForensic_ImageData/FF+'
 
-def read_ff_dataset(deepfake_type):
-    """ Read deepfake dataset by deepfake type
+def read_ff_dataset(deepfake_types=None):
+    """ Read deepfake dataset by deepfake types
     Args:
-        deepfake_type (str): {deepfakes, face2face, faceshifter, faceswap, neuraltexture}
+        deepfake_types (List[str]): List of deepfake types {deepfakes, face2face, faceshifter, faceswap, neuraltexture}
+                                   If None, use all available types
     Return:
         train_real_url (List): train real dataset
         test_real_url (List): test real dataset
         train_fake_url (List): train fake dataset
         test_fake_url (List): test fake dataset
     """
+    if deepfake_types is None:
+        deepfake_types = ['deepfakes', 'face2face', 'faceshifter', 'faceswap', 'neuraltexture']
+    
+    # Ensure deepfake_types is a list
+    if isinstance(deepfake_types, str):
+        deepfake_types = [deepfake_types]
+    
     train_real_url = []
     test_real_url = []
     train_fake_url = []
@@ -629,64 +692,113 @@ def read_ff_dataset(deepfake_type):
     # Number training video (Train : Test = 8 : 2)
     num_vid_train = int(0.8 * len(vid_ids))
 
-    # Read dataset
+    # First, collect all real images (only once, not per deepfake type)
     for i, vid_id in enumerate(vid_ids):
-        # Define deepfake and original path base on folder structure
-        deepfake_folder_path = f"{BASE_URL}/{vid_id}/{deepfake_type}"
         original_folder_path = f"{BASE_URL}/{vid_id}/original"
         
+        # Check if original folder exists
+        if not os.path.exists(original_folder_path):
+            continue
+        
+        # Get corresponding real images (only once per video)
+        real_images = []
+        for image_name in os.listdir(original_folder_path):
+            real_images.append(os.path.join(original_folder_path, image_name))
+        
+        # Split into train/test
         if i < num_vid_train:
-            for image_name in os.listdir(deepfake_folder_path):
-                train_fake_url.append(os.path.join(deepfake_folder_path, image_name))
-                train_real_url.append(os.path.join(original_folder_path, image_name))
+            train_real_url.extend(real_images)
         else:
+            test_real_url.extend(real_images)
+
+    # Then, collect fake images for each deepfake type
+    for deepfake_type in deepfake_types:
+        print(f"Loading deepfake type: {deepfake_type}")
+        
+        for i, vid_id in enumerate(vid_ids):
+            # Define deepfake path
+            deepfake_folder_path = f"{BASE_URL}/{vid_id}/{deepfake_type}"
+            
+            # Check if deepfake folder exists
+            if not os.path.exists(deepfake_folder_path):
+                print(f"Warning: {deepfake_folder_path} does not exist, skipping.")
+                continue
+            
+            # Process fake images - check if mask exists
+            fake_images = []
             for image_name in os.listdir(deepfake_folder_path):
-                test_fake_url.append(os.path.join(deepfake_folder_path, image_name))
-                test_real_url.append(os.path.join(original_folder_path, image_name))
+                fake_img_path = os.path.join(deepfake_folder_path, image_name)
+                mask_path = fake_img_path.replace('FF+', 'FF+Mask')
+                
+                # Only include fake image if its mask exists
+                if os.path.exists(mask_path):
+                    fake_images.append(fake_img_path)
+                else:
+                    print(f"Skipping {fake_img_path} - mask not found")
+            
+            # Split into train/test
+            if i < num_vid_train:
+                train_fake_url.extend(fake_images)
+            else:
+                test_fake_url.extend(fake_images)
 
     return train_real_url, test_real_url, train_fake_url, test_fake_url
     
 
-# Train test split
-# train_real_url, test_real_url, train_fake_url, test_fake_url = train_test_split(list_real_url, list_fake_url_filter, test_size=0.2, random_state=42)
+# Specify deepfake types to use
+# deepfake_types = ['deepfakes', 'face2face', 'faceswap']  # Example: use 3 types
+deepfake_types = ['deepfakes', 'face2face', 'faceshifter', 'faceswap', 'neuraltexture']  # Use all types
+augment_real_factor = len(deepfake_types)  # Number of augmentations = number of deepfake types
 
-# Load FF+ dataset
-train_real_url, test_real_url, train_fake_url, test_fake_url = read_ff_dataset(deepfake_type='deepfakes')
+# Load FF+ dataset with specified deepfake types
+train_real_url, test_real_url, train_fake_url, test_fake_url = read_ff_dataset(deepfake_types=deepfake_types)
 
 train_list = train_real_url + train_fake_url 
 test_list = test_real_url + test_fake_url
 
-print(f"Train real images: {len(train_real_url)}")
+print(f"Train real images (before {augment_real_factor}x augmentation): {len(train_real_url)}")
 print(f"Test real images: {len(test_real_url)}")
 print(f"Train fake images: {len(train_fake_url)}")
 print(f"Test fake images: {len(test_fake_url)}")
+print(f"Using deepfake types: {deepfake_types}")
+print(f"Real image augmentation factor: {augment_real_factor}x")
 
 from torch.utils.data import Dataset
 from torchvision import transforms
 
 
+# Transform without resizing and without ToTensor - keep PIL format for frequency analysis
 transform = transforms.Compose([
-    transforms.ToTensor(),  
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomRotation(15),
-    transforms.Resize((256, 256))
+    # No ToTensor here - we'll convert manually after frequency processing
 ])
 
-
+# Real transform with augmentation but without resizing and without ToTensor
 real_transform = transforms.Compose([
-    transforms.ToTensor(),
     transforms.RandomHorizontalFlip(),
     transforms.RandomRotation(15),
-    transforms.ColorJitter(),
-    transforms.Resize((256,256))
+    transforms.ColorJitter()
+    # No ToTensor here - we'll convert manually after frequency processing
 ])
 
 
 class FaceDataset(Dataset):
-    def __init__(self, list_img_url, transform = None, real_transform = None):
+    def __init__(self, list_img_url, transform = None, real_transform = None, augment_real_factor=1):
         self.list_img_url = list_img_url
         self.transform = transform
         self.real_transform = real_transform
+        self.augment_real_factor = augment_real_factor
+        
+        # If augmenting real images, expand the dataset
+        if self.augment_real_factor > 1:
+            expanded_urls = []
+            for img_url in self.list_img_url:
+                if '/original/' in img_url:
+                    # Add multiple copies of real images for augmentation
+                    expanded_urls.extend([img_url] * self.augment_real_factor)
+                else:
+                    # Keep fake images as is
+                    expanded_urls.append(img_url)
+            self.list_img_url = expanded_urls
         
     def __len__(self):
         return len(self.list_img_url)
@@ -695,52 +807,68 @@ class FaceDataset(Dataset):
         img_url = self.list_img_url[idx]
         img = Image.open(img_url)
 
-        # Real image
+        # Apply augmentation first (keeping PIL format)
         if '/original/' in img_url:
-            mask = np.zeros((256,256), dtype = 'float32')
-            mask = torch.from_numpy(mask).unsqueeze(dim = 0)
-
+            # Real image - apply augmentation (returns PIL image)
+            augmented_img = self.real_transform(img)
             label = 0
-            rgb_img = self.real_transform(img)
-
-        # Fake image
+            # Create zero mask
+            mask = np.zeros((256, 256), dtype='float32')
+            mask = torch.from_numpy(mask).unsqueeze(dim=0)
         else:
+            # Fake image - no augmentation (returns PIL image)
+            augmented_img = self.transform(img) if self.transform else img
+            label = 1
+            # Load actual mask
             mask_url = img_url.replace('FF+', 'FF+Mask')
             mask = Image.open(mask_url)
-            mask = self.transform(mask)
+            mask = transforms.ToTensor()(mask)
+            # Resize mask to target size
+            mask = F.interpolate(mask.unsqueeze(0), size=(256, 256), mode='bilinear', align_corners=False).squeeze(0)
+            # Normalize mask per channel  
+            mask = (mask - mask.mean(dim=(1,2), keepdim=True)) / (mask.std(dim=(1,2), keepdim=True) + 1e-6)
 
-            label = 1
-            rgb_img = self.transform(img)
-
-        # # Original frequency features (without HAFT preprocessing)
-        # # FFT
-        # fft_img = high_pass_filter_image(img_url)
-        # fft_img = np.expand_dims(fft_img, axis=2)
+        # ===== OPTIMIZED SOLUTION: Extract frequency features directly from AUGMENTED PIL image =====
+        # Convert to grayscale once and pass to all frequency functions for efficiency
+        
+        # Convert augmented PIL image to grayscale numpy array once
+        gray_img_np = np.array(augmented_img.convert('L'))
+        
+        # Extract frequency features from grayscale image at ORIGINAL size
         # SWT
-        swt_img = stationary_wavelet_transform(img_url, resize_to=(160, 160))
-        # DCT
-        dct_img = dct_high_freq_only(img_url, keep_ratio=0.2, resize_to=(160, 160))
+        swt_img = stationary_wavelet_transform(gray_img_np, resize_to=(256, 256))
+        # DCT  
+        dct_img = dct_high_freq_only(gray_img_np, keep_ratio=0.2, resize_to=(256, 256))
         dct_img = np.expand_dims(dct_img, axis=2)
         # Laplacian
-        lap_edges, high_freq_img = laplacian_high_freq(img_url, resize_to=(160, 160))
+        lap_edges, high_freq_img = laplacian_high_freq(gray_img_np, resize_to=(256, 256))
         lap_edges = np.expand_dims(lap_edges, axis=2)
         high_freq_img = np.expand_dims(high_freq_img, axis=2)
-        # SRM Filters - now returns only last 3 individual filter responses
-        srm_img = apply_srm_filters(img_url, resize_to=(160, 160))
+        # SRM Filters
+        srm_img = apply_srm_filters(gray_img_np, resize_to=(256, 256))
         
-        # # Concatenate all frequency features (now 9 channels: FFT(1) + SWT(2) + DCT(1) + Laplacian(2) + SRM(3))
-        # freq_img = np.concatenate((fft_img, swt_img, dct_img, lap_edges, high_freq_img, srm_img), axis=2).astype(np.float32)
-        # Concatenate all frequency features (now 8 channels: SWT(2) + DCT(1) + Laplacian(2) + SRM(3))
-        freq_img = np.concatenate((swt_img, dct_img, lap_edges, high_freq_img, srm_img), axis=2).astype(np.float32)
-        freq_img = self.transform(freq_img)
+        # Concatenate frequency features: SWT(2) + DCT(1) + Laplacian(2) + SRM(3) = 8 channels
+        freq_features = np.concatenate((swt_img, dct_img, lap_edges, high_freq_img, srm_img), axis=2).astype(np.float32)
+
+        # Prepare grayscale for HAFT processing - resize to consistent size (160, 160) like other inputs
+        gray_img = torch.from_numpy(gray_img_np).unsqueeze(0).float()  # (1, H, W) format, convert to float
+        # Normalize gray_img per channel
+        gray_img = (gray_img - gray_img.mean(dim=(1,2), keepdim=True)) / (gray_img.std(dim=(1,2), keepdim=True) + 1e-6)
+        gray_img = F.interpolate(gray_img.unsqueeze(0), size=(160, 160), mode='bilinear', align_corners=False).squeeze(0)
+
+        # Convert frequency features and rgb image to tensor and normalize
+        freq_img = torch.from_numpy(freq_features).permute(2, 0, 1)  # (C,H,W)
+        # Normalize per channel
+        freq_img = (freq_img - freq_img.mean(dim=(1,2), keepdim=True)) / (freq_img.std(dim=(1,2), keepdim=True) + 1e-6)
         
-        # Prepare grayscale image for HAFT processing within the model
-        # Read and resize grayscale image to match frequency features size
-        gray_img = cv2.imread(img_url, cv2.IMREAD_GRAYSCALE)
-        gray_img = cv2.resize(gray_img, (160, 160), interpolation=cv2.INTER_CUBIC)  # Match other features
-        gray_img = gray_img.astype(np.float32) / 255.0  # Normalize to [0, 1]
-        gray_img = torch.from_numpy(gray_img).unsqueeze(0)  # Add channel dimension: (1, H, W)
+        # Convert augmented PIL image to tensor and normalize
+        rgb_img = transforms.ToTensor()(augmented_img)
+        rgb_img = F.interpolate(rgb_img.unsqueeze(0), size=(256, 256), mode='bilinear', align_corners=False).squeeze(0)
+        rgb_img = (rgb_img - rgb_img.mean(dim=(1,2), keepdim=True)) / (rgb_img.std(dim=(1,2), keepdim=True) + 1e-6)
+
         
+        
+
         return rgb_img, freq_img, gray_img, mask, label
 
 def to_3d(x):
@@ -1303,38 +1431,6 @@ class SEBlock(nn.Module):
         y = y.view(b, c, 1, 1)
         return x * y.expand_as(x)
 
-# class EncodeELA(nn.Module):
-#     def __init__(self, in_ch=3, base_ch=64, use_se=True):
-#         super(EncodeELA, self).__init__()
-
-#         # Multi-scale stem
-#         self.stem3 = nn.Conv2d(in_ch, base_ch//2, 3, padding=1)
-#         self.stem5 = nn.Conv2d(in_ch, base_ch//2, 5, stride=2, padding=2)
-#         self.stem7 = nn.Conv2d(in_ch, base_ch//2, 7, stride=2, padding=3)
-#         self.stem_out = nn.Conv2d(base_ch*3//2, base_ch, 1)
-
-#         # Encoder blocks
-#         self.conv1 = ConvBlock(base_ch, base_ch)
-#         self.cbam1 = CBAM(base_ch, 16)
-#         self.down1 = nn.Conv2d(base_ch, base_ch*2, 3, stride=2, padding=1)
-
-#         self.conv2 = ConvBlock(base_ch*2, base_ch*2)
-#         self.cbam2 = CBAM(base_ch*2, 16)
-#         self.down2 = nn.Conv2d(base_ch*2, base_ch*4, 3, stride=2, padding=1)
-
-#         self.conv3 = ConvBlock(base_ch*4, base_ch*4)
-#         self.cbam3 = CBAM(base_ch*4, 16)
-#         self.se3 = SEBlock(base_ch*4) if use_se else nn.Identity()
-#         self.down3 = nn.Conv2d(base_ch*4, base_ch*8, 3, stride=2, padding=1)
-
-#         self.conv4 = ConvBlock(base_ch*8, base_ch*8)
-#         self.cbam4 = CBAM(base_ch*8, 16)
-#         self.down4 = nn.Conv2d(base_ch*8, base_ch*8, 3, stride=2, padding=1)
-
-#         self.conv5 = ConvBlock(base_ch*8, base_ch*8)
-#         self.cbam5 = CBAM(base_ch*8, 16)
-#         self.se5 = SEBlock(base_ch*8) if use_se else nn.Identity()
-
 class EncodeELA(nn.Module):
     def __init__(self):
         super(EncodeELA, self).__init__()
@@ -1355,11 +1451,6 @@ class EncodeELA(nn.Module):
         # Ultra-speed optimization: Enable memory format optimization
         self.enable_channels_last = True
         
-        # # Updated frequency features: FFT(1) + SWT(2) + DCT(1) + Laplacian(2) + SRM(3) = 9 channels
-        # # HAFT output: 1 channel (enhanced grayscale features)
-        # # Total: 9 + 1 = 10 channels
-        # self.conv1 = ConvBlock(10, 64)  # 9 frequency + 1 HAFT = 10 channels
-        # Updated frequency features: SWT(2) + DCT(1) + Laplacian(2) + SRM(3) = 8 channels
         # HAFT output: 1 channel (enhanced grayscale features)
         # Total: 8 + 1 = 9 channels
         self.conv1 = ConvBlock(9, 64)  # 8 frequency + 1 HAFT = 9 channels
@@ -1528,7 +1619,7 @@ class U2NET(nn.Module):
         
         Args:
             x: RGB image features (B, 3, H, W)
-            ela: Frequency features tensor (B, 9, H, W) - FFT(1) + SWT(2) + DCT(1) + Laplacian(2) + SRM(3) = 9 channels
+            ela: Frequency features tensor (B, 8, H, W) - SWT(2) + DCT(1) + Laplacian(2) + SRM(3) = 8 channels
             gray_img: Grayscale image tensor (B, 1, H, W) for HAFT processing
         """
 
@@ -1987,12 +2078,15 @@ def train(model, train_dataloader, test_dataloader, optimizer, scheduler, loss_s
 
 from torch.utils.data import DataLoader
 
-train_dataset = FaceDataset(train_list, transform=transform, real_transform=real_transform)
-test_dataset = FaceDataset(test_list, transform=transform, real_transform=transform)
+train_dataset = FaceDataset(train_list, transform=transform, real_transform=real_transform, augment_real_factor=augment_real_factor)
+test_dataset = FaceDataset(test_list, transform=transform, real_transform=transform, augment_real_factor=1)  # No augmentation for test
+
+print(f"After {augment_real_factor}x augmentation - Train dataset size: {len(train_dataset)}")
+print(f"Test dataset size: {len(test_dataset)}")
 # Ultra-optimized DataLoader settings for maximum speed
 train_dataloader = DataLoader(
     train_dataset, 
-    batch_size=32,  # Increased batch size for better GPU utilization
+    batch_size=16,  # Increased batch size for better GPU utilization
     num_workers=2,  # Reduced to avoid worker creation warning
     shuffle=True,
     pin_memory=True,  # Faster GPU transfer
@@ -2003,7 +2097,7 @@ train_dataloader = DataLoader(
 
 test_dataloader = DataLoader(
     test_dataset, 
-    batch_size=32,  # Consistent batch size
+    batch_size=16,  # Consistent batch size
     num_workers=2,  # Reduced to avoid worker creation warning
     shuffle=False,  # No need to shuffle test data
     pin_memory=True,
@@ -2028,7 +2122,7 @@ model = U2NET().to(device)
 
 # Summary model
 # Updated to match new U2NET signature: SWT(2) + DCT(1) + Laplacian(2) + SRM(3) = 8 channels
-summary(model, input_size=[(3, 256, 256), (8, 256, 256), (1, 256, 256)])
+summary(model, input_size=[(3, 256, 256), (8, 256, 256), (1, 160, 160)])
 
 from torchmetrics.classification import BinaryAUROC
 
